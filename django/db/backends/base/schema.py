@@ -269,6 +269,7 @@ class BaseDatabaseSchemaEditor(object):
         # Add any unique_togethers (always deferred, as some fields might be
         # created afterwards, like geometry fields with some backends)
         for fields in model._meta.unique_together:
+            # TODO: add here '-' filtering
             columns = [model._meta.get_field(field).column for field in fields]
             self.deferred_sql.append(self._create_unique_sql(model, columns))
         # Make the table
@@ -334,8 +335,11 @@ class BaseDatabaseSchemaEditor(object):
             self._delete_composed_index(model, fields, {'index': True}, self.sql_delete_index)
         # Created indexes
         for field_names in news.difference(olds):
-            fields = [model._meta.get_field(field) for field in field_names]
-            self.execute(self._create_index_sql(model, fields, suffix="_idx"))
+            orders = (('DESC' if f.startswith('-') else 'ASC') for f in field_names)
+            fields = ((f[1:] if f.startswith('-') else f) for f in field_names)
+            fields = [model._meta.get_field(f) for f in fields]
+            # fields = [model._meta.get_field(field) for field in field_names]
+            self.execute(self._create_index_sql(model, fields, orders=orders, suffix="_idx"))
 
     def _delete_composed_index(self, model, fields, constraint_kwargs, sql):
         columns = [model._meta.get_field(field).column for field in fields]
@@ -820,7 +824,7 @@ class BaseDatabaseSchemaEditor(object):
             index_name = "D%s" % index_name[:-1]
         return index_name
 
-    def _create_index_sql(self, model, fields, suffix="", sql=None):
+    def _create_index_sql(self, model, fields, orders=None, suffix="", sql=None):
         """
         Return the SQL statement to create the index for one or several fields.
         `sql` can be specified if the syntax differs from the standard (GIS
@@ -835,7 +839,12 @@ class BaseDatabaseSchemaEditor(object):
         if tablespace_sql:
             tablespace_sql = " " + tablespace_sql
 
-        columns = [field.column for field in fields]
+        if not orders or len(orders) != len(fields):
+            orders = ['ASC'] * len(fields)
+        # columns = [field.column for field in fields]
+        columns = []
+        for i in range(len(fields)):
+            columns.append("%s %s" % (fields[i], orders[i]))
         sql_create_index = sql or self.sql_create_index
         return sql_create_index % {
             "table": self.quote_name(model._meta.db_table),
@@ -857,8 +866,11 @@ class BaseDatabaseSchemaEditor(object):
                 output.append(self._create_index_sql(model, [field], suffix=""))
 
         for field_names in model._meta.index_together:
-            fields = [model._meta.get_field(field) for field in field_names]
-            output.append(self._create_index_sql(model, fields, suffix="_idx"))
+            orders = (('DESC' if f.startswith('-') else 'ASC') for f in field_names)
+            fields = ((f[1:] if f.startswith('-') else f) for f in field_names)
+            fields = [model._meta.get_field(f) for f in fields]
+            # fields = [model._meta.get_field(field) for field in field_names]
+            output.append(self._create_index_sql(model, fields, orders=orders, suffix="_idx"))
         return output
 
     def _rename_field_sql(self, table, old_field, new_field, new_type):

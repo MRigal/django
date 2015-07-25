@@ -1370,7 +1370,7 @@ class Model(six.with_metaclass(ModelBase)):
             ]
 
         elif any(not isinstance(fields, (tuple, list))
-                for fields in cls._meta.index_together):
+                 for fields in cls._meta.index_together):
             return [
                 checks.Error(
                     "All 'index_together' elements must be lists or tuples.",
@@ -1383,6 +1383,8 @@ class Model(six.with_metaclass(ModelBase)):
         else:
             errors = []
             for fields in cls._meta.index_together:
+                # Allow index_together to specify DESC indexes
+                fields = ((f[1:] if f.startswith('-') else f) for f in fields)
                 errors.extend(cls._check_local_fields(fields, "index_together"))
             return errors
 
@@ -1413,6 +1415,7 @@ class Model(six.with_metaclass(ModelBase)):
         else:
             errors = []
             for fields in cls._meta.unique_together:
+                # TODO: same '-' prefix
                 errors.extend(cls._check_local_fields(fields, "unique_together"))
             return errors
 
